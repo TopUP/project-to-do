@@ -11,42 +11,89 @@
           <button class="button is-info" :disabled="!newTodoContent">Add</button>
         </p>
       </div>
+      <div class="field is-grouped mb-5">
+        <p class="control">
+          <button type="button" class="button is-info" @click="changeOrder">Date {{ order === 'desc' ? '&#8595;' : '&#8593;' }}</button>
+        </p>
+      </div>
     </form>
 
-    <div class="card mb-5" v-for="todo in todos" :key="todo.id">
-      <div class="card-content" data-id="{{todo.id}}">
+    <div class="card mb-5" v-for="(todo, index) in todos" :key="todo.id">
+      <div class="card-content" :class="{'has-background-success-light' : todo.done}">
         <div class="content">
           <div class="columns">
-            <div class="column is-mobile is-vcentered">{{ todo.content }}</div>
+            <div class="column is-mobile is-vcentered" :class="{'has-text-success line-through': todo.done}">{{ todo.content }}</div>
             <div class="column is-5 has-text-right">
-              <button class="button is-light" v-if="!todo.done">&check;</button>
-              <button class="button is-danger ml-2">&cross;</button>
+              <button class="button" :class="todo.done ? 'is-success' : 'is-light'" @click="toggleDone(todo.id)">&check;</button>
+              <button class="button is-danger ml-2" @click="deleteTodo(todo.id)">&cross;</button>
             </div>
           </div>
-
         </div>
       </div>
     </div>
+
   </div>
 </template>
 
 <script setup>
-import { ref } from 'vue';
-import { v4 as uuidv4 } from 'uuid';
+import { ref, onMounted} from 'vue';
+import { db } from '@/firebase';
+import { collection, query, where, orderBy, onSnapshot, doc, addDoc, getDocs, updateDoc, deleteDoc } from "firebase/firestore";
 
 const todos           = ref([]);
 const newTodoContent  = ref('');
+const order           = ref('desc');
+const dbCollection    = collection(db, "todos");
+const orderQueries = {
+  'asc': query(dbCollection, orderBy('date', 'asc')),
+  'desc': query(dbCollection, orderBy('date', 'desc')),
+}
 
-const addTodo = function () {
-  const newTodo = {
-    id      : uuidv4(),
+onMounted(() => {
+
+  onSnapshot(orderQueries[order.value], (querySnapshot) => {
+    processFbData(querySnapshot);
+  });
+})
+
+const changeOrder = async () => {
+  order.value = order.value === 'desc' ? 'asc' : 'desc';
+
+  processFbData(await getDocs(orderQueries[order.value]));
+};
+
+const processFbData = (querySnapshot) => {
+  let fbTodos = [];
+  querySnapshot.forEach((doc) => {
+    fbTodos.push({
+      id      : doc.id,
+      content : doc.data().content,
+      done    : doc.data().done,
+    });
+  });
+  todos.value = fbTodos;
+}
+
+const addTodo = () => {
+  addDoc(dbCollection, {
     content : newTodoContent.value,
-    done    : false
-  }
+    done    : false,
+    date    : Date.now()
+  });
 
-  todos.value.unshift(newTodo);
   newTodoContent.value = '';
 }
+const deleteTodo = (id) => {
+  deleteDoc(doc(dbCollection, id));
+}
+const toggleDone = (id) => {
+  let index = todos.value.findIndex((todo) => todo.id === id);
+
+  updateDoc(doc(dbCollection, id), {
+    done: !todos.value[index].done
+  });
+}
+
 </script>
 
 <style>
@@ -56,5 +103,9 @@ const addTodo = function () {
   max-width: 400px;
   padding: 20px;
   margin: 0 auto;
+}
+
+.line-through {
+  text-decoration: line-through;
 }
 </style>
